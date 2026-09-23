@@ -1,0 +1,8 @@
+# OpenBookmaker
+node_modules/
+data/
+.env
+*.log
+*.db
+*.db-wal
+*.db-shm

@@ -1,0 +1,26 @@
+{
+  "name": "openbookmaker",
+  "version": "0.1.0",
+  "description": "Open-source Betfair-style betting exchange - back/lay order book, matching engine, tick-ladder pricing, cash-out. Paper money only.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "seed": "node --no-warnings lib/seed.js",
+    "test": "node tests/odds.test.js && node tests/auth.test.js && node tests/ledger.test.js && node tests/match.test.js && node tests/settle.test.js && node tests/cashout.test.js && node tests/api.test.js",
+    "test:ui": "node tests/ui_test.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "keywords": [
+    "betting-exchange",
+    "betfair",
+    "order-book",
+    "matching-engine",
+    "paper-money"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
