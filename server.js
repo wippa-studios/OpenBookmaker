@@ -20,14 +20,17 @@ process.on('uncaughtException', (err) => console.error('[uncaughtException]', er
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '256kb' }));
+// Baseline hardening headers (cheap, local-demo appropriate).
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  next();
+});
 
-// DB + idempotent seed on first run.
-const db = openStore(config.DB_PATH);
-seedIfNeeded(db);
-
-// ── Origin guard: mutating requests need no Origin (curl/local tooling) or
-// a loopback/same-host origin (JIT/bet-agent pattern). ────────────────────
+// ── Origin guard FIRST, before any body parsing: mutating requests need no
+// Origin (curl/local tooling) or a loopback/same-host origin (JIT/bet-agent
+// pattern). Running it before express.json() means a foreign origin gets 403
+// even when the body is malformed. ──────────────────────────────────────────
 app.use((req, res, next) => {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
   const origin = req.headers.origin;
@@ -38,6 +41,14 @@ app.use((req, res, next) => {
   } catch {}
   return res.status(403).json({ error: 'Forbidden origin' });
 });
+
+app.use(express.json({ limit: '256kb' }));
+
+// DB + idempotent seed on first run.
+const db = openStore(config.DB_PATH);
+seedIfNeeded(db);
+// Housekeeping: drop expired sessions at boot.
+db.prepare("DELETE FROM sessions WHERE expires_at <= datetime('now')").run();
 
 // ── Session (httpOnly cookie + Bearer fallback) ───────────────────────────
 function parseCookies(req) {
@@ -239,6 +250,10 @@ app.get('/api/wallet', requireAuth, (req, res) => {
   res.json(L.walletView(db, req.user.id));
 });
 
+app.get('/api/settlements', requireAuth, (req, res) => {
+  res.json({ settlements: SET.settledFor(db, req.user.id) });
+});
+
 app.post('/api/wallet/deposit', requireAuth, (req, res) => {
   const amount = req.body ? req.body.amount_cents : undefined;
   const result = L.deposit(db, req.user.id, amount, config.FAUCET_MAX_CENTS);
@@ -282,17 +297,29 @@ app.post('/api/admin/events', requireAdmin, (req, res) => {
   if (!Number.isInteger(Number(sport_id)) || !String(name || '').trim() || !String(starts_at || '').trim()) {
     return res.status(400).json({ error: 'sport_id, name and starts_at required' });
   }
+  const sportId = Number(sport_id);
+  let compId = null;
+  if (competition_id !== null && competition_id !== undefined && competition_id !== '') {
+    compId = Number(competition_id);
+    if (!Number.isInteger(compId)) return res.status(400).json({ error: 'competition_id must be an integer' });
+    // A competition from a DIFFERENT sport would create inconsistent catalogue
+    // data (the board groups by competition but filters by sport).
+    const comp = db.prepare('SELECT sport_id FROM competitions WHERE id = ?').get(compId);
+    if (!comp || comp.sport_id !== sportId) {
+      return res.status(400).json({ error: 'competition_id does not belong to that sport' });
+    }
+  }
   try {
     db.prepare('INSERT INTO events (sport_id, competition_id, name, starts_at) VALUES (?, ?, ?, ?)').run(
-      Number(sport_id),
-      Number.isInteger(Number(competition_id)) && competition_id ? Number(competition_id) : null,
+      sportId,
+      compId,
       String(name).trim(),
       String(starts_at).trim()
     );
   } catch {
     return res.status(400).json({ error: 'Invalid sport_id/competition_id' });
   }
-  const ev = db.prepare('SELECT * FROM events WHERE name = ? ORDER BY id DESC').get(String(name).trim());
+  const ev = db.prepare('SELECT * FROM events WHERE sport_id = ? AND name = ? ORDER BY id DESC').get(sportId, String(name).trim());
   res.status(201).json({ event: ev });
 });
 
@@ -325,6 +352,16 @@ app.post('/api/admin/selections', requireAdmin, (req, res) => {
     return res.status(400).json({ error: 'Invalid market_id' });
   }
   const sel = db.prepare('SELECT * FROM selections WHERE market_id = ? AND name = ?').get(Number(market_id), String(name).trim());
+  // A market created at runtime has no ladders until something quotes it —
+  // quote immediately so new markets are tradeable (the bot's own two sides
+  // never cross, so a single runner is safe to quote).
+  if (config.BOT_ENABLED) {
+    try {
+      bots.quoteMarket(db, Number(market_id));
+    } catch (e) {
+      console.error('[bots] quote-after-create failed:', e.message);
+    }
+  }
   res.status(201).json({ selection: sel });
 });
 
@@ -341,8 +378,13 @@ app.patch('/api/admin/markets/:id', requireAdmin, (req, res) => {
 
 app.post('/api/admin/markets/:id/settle', requireAdmin, (req, res) => {
   const body = req.body || {};
-  const winner = body.winner_selection_id != null && body.winner_selection_id !== '' ? Number(body.winner_selection_id) : null;
-  const result = SET.settleMarket(db, Number(req.params.id), { winner_selection_id: winner, void: !!body.void });
+  // Pass the caller's values through UNCHANGED: lib/settle.js validates
+  // strictly (a string "false" must not void a market, a boolean must not
+  // become selection id 1). No coercion happens here on purpose.
+  const result = SET.settleMarket(db, Number(req.params.id), {
+    winner_selection_id: body.winner_selection_id === undefined ? null : body.winner_selection_id,
+    void: body.void === undefined ? false : body.void,
+  });
   broadcast('book', { market_id: Number(req.params.id) });
   broadcast('settlement', { market_id: Number(req.params.id) });
   for (const u of result.per_user) {
@@ -364,7 +406,22 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   res.json({ markets });
 });
 
+// Competitions for a sport — the admin desk's create form needs the list.
+app.get('/api/admin/competitions', requireAdmin, (req, res) => {
+  const sportId = Number(req.query.sport_id);
+  if (!Number.isInteger(sportId)) return res.status(400).json({ error: 'sport_id required' });
+  const competitions = db
+    .prepare('SELECT id, name, country FROM competitions WHERE sport_id = ? ORDER BY name')
+    .all(sportId);
+  res.json({ competitions });
+});
+
 // ── Static frontend + error handler ────────────────────────────────────────
+// Unknown API paths must answer JSON, not Express's HTML 404 page.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Unknown endpoint' });
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // eslint-disable-next-line no-unused-vars

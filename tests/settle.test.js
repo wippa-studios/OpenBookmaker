@@ -206,4 +206,28 @@ check('S10 void after lay excess release', () => {
   assert.deepStrictEqual(balances(db, users.alice.id), { b: 100000, f: 0 });
 });
 
+// S11: strict input validation. Settlement is irreversible, so a coerced
+// value must never pick the outcome: {void:"false"} must NOT void, and
+// true must not become selection id 1.
+check('S11 strict settlement input', () => {
+  const { db, users } = fresh();
+  const { market_id, s1 } = mkMarket(db, [['Alpha', 2.0], ['Beta', 2.2]]);
+  M.placeOrder(db, users.alice, { selection_id: s1, side: 'back', price: 2.0, stake_cents: 10000 });
+  M.placeOrder(db, users.bob, { selection_id: s1, side: 'lay', price: 2.0, stake_cents: 10000 });
+  // string "false" is not a boolean -> reject, market stays open
+  assert.throws(() => S.settleMarket(db, market_id, { void: 'false' }), (e) => e.status === 400);
+  assert.throws(() => S.settleMarket(db, market_id, { void: 'false', winner_selection_id: s1 }), (e) => e.status === 400);
+  // a boolean winner id must not be coerced to selection 1
+  assert.throws(() => S.settleMarket(db, market_id, { winner_selection_id: true }), (e) => e.status === 400);
+  assert.throws(() => S.settleMarket(db, market_id, { winner_selection_id: '1' }), (e) => e.status === 400);
+  // both a winner and void:true is contradictory
+  assert.throws(() => S.settleMarket(db, market_id, { winner_selection_id: s1, void: true }), (e) => e.status === 400);
+  // nothing above may have moved a cent
+  assert.deepStrictEqual(balances(db, users.alice.id), { b: 100000, f: 10000 });
+  assert.strictEqual(db.prepare('SELECT status s FROM markets WHERE id = ?').get(market_id).s, 'open');
+  // a valid call still works afterwards
+  const r = S.settleMarket(db, market_id, { winner_selection_id: s1 });
+  assert.strictEqual(r.market.status, 'settled');
+});
+
 console.log(`\nsettle.test.js: ${passed} checks passed`);

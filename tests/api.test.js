@@ -19,7 +19,7 @@ const check = async (name, fn) => {
 };
 
 (async () => {
-  const server = srv.app.listen(0);
+  const server = srv.app.listen(0, '127.0.0.1'); // loopback only
   await new Promise((resolve) => server.on('listening', resolve));
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}`;
@@ -170,6 +170,33 @@ const check = async (name, fn) => {
       assert.strictEqual(r.status, 403);
       const ok = await j('POST', '/api/wallet/deposit', { body: { amount_cents: 100 }, cookie: alice, origin: `http://127.0.0.1:${port}` });
       assert.strictEqual(ok.status, 200);
+    });
+
+    // ── settlements history ─────────────────────────────────────────────
+    await check('settlements history reflects the settle', async () => {
+      const r = await j('GET', '/api/settlements', { cookie: alice });
+      assert.strictEqual(r.status, 200);
+      const row = r.json.settlements.find((x) => x.market_id === marketId);
+      assert.ok(row, 'settlement row present');
+      assert.strictEqual(row.pnl_cents, 15000);
+      assert.strictEqual(row.commission_cents, 375);
+      assert.ok(row.event_name, 'event name joined');
+    });
+
+    // ── API hygiene: JSON 404, no HTML leaking to API clients ───────────
+    await check('unknown /api path answers JSON 404', async () => {
+      const r = await j('GET', '/api/nope');
+      assert.strictEqual(r.status, 404);
+      assert.ok(r.json && r.json.error, 'JSON error body');
+    });
+
+    await check('foreign origin rejected even with a malformed body', async () => {
+      const res = await fetch(`${base}/api/wallet/deposit`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example', cookie: alice },
+        body: '{not json',
+      });
+      assert.strictEqual(res.status, 403); // guard runs before the body parser
     });
 
     // ── SSE stream ──────────────────────────────────────────────────────

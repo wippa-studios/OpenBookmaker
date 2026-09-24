@@ -219,4 +219,29 @@ check('E12 escrow float exactness', () => {
   assert.strictEqual(l.price, 2.02); // snapped input stays on the ladder
 });
 
+// E13: FIFO within a price level — two resting lays at the SAME price, the
+// older order must fill first (price-time priority, not arbitrary).
+check('E13 FIFO within a price level', () => {
+  const { db, users } = fresh();
+  const { market_id, s1 } = mkMarket(db, [['Alpha', 2.0], ['Beta', 2.2]]);
+  M.placeOrder(db, users.bob, { selection_id: s1, side: 'lay', price: 2.0, stake_cents: 4000 });
+  M.placeOrder(db, users.carol, { selection_id: s1, side: 'lay', price: 2.0, stake_cents: 4000 });
+  M.placeOrder(db, users.alice, { selection_id: s1, side: 'back', price: 2.0, stake_cents: 6000 });
+  const rows = db
+    .prepare(
+      `SELECT m.stake_cents s, bo.placed_at t FROM matches m
+       JOIN orders bo ON bo.id = m.back_order_id
+       JOIN orders lo ON lo.id = m.lay_order_id
+       WHERE m.market_id = ? ORDER BY m.id`
+    )
+    .all(market_id);
+  // The OLDER lay (bob) is filled first, even though carol's sits at the same price.
+  assert.deepStrictEqual(rows.map((r) => r.s), [4000, 2000]);
+  const bobId = db.prepare("SELECT id FROM orders WHERE user_id = ? AND side = 'lay'").get(users.bob.id).id;
+  const carolId = db.prepare("SELECT id FROM orders WHERE user_id = ? AND side = 'lay'").get(users.carol.id).id;
+  assert.ok(bobId < carolId, 'bob rested first');
+  assert.deepStrictEqual(orderOf(db, bobId), { matched: 4000, status: 'fully_matched' });
+  assert.deepStrictEqual(orderOf(db, carolId), { matched: 2000, status: 'open' });
+});
+
 console.log(`\nmatch.test.js: ${passed} checks passed`);
