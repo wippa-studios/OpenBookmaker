@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest an exchange capability
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What can't you do on the exchange today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+      description: What should it do, and what are the rules at the edges?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Matching engine, Settlement, Cash-out, Admin desk, UI, API, Liquidity bots, Docs/CI]
+    validations:
+      required: true
+  - type: textarea
+    id: money-rules
+    attributes:
+      label: Money rules
+      description: >
+        If this touches balances, escrow, commission or payouts, spell out the
+        arithmetic including rounding. Money changes are the highest-risk edits
+        in this repo.

@@ -4,7 +4,7 @@ const express = require('express');
 const path = require('path');
 const config = require('./lib/config');
 const { openStore } = require('./lib/store');
-const { seedIfNeeded } = require('./lib/seed');
+const { seedIfNeeded, rollForwardEvents } = require('./lib/seed');
 const A = require('./lib/auth');
 const L = require('./lib/ledger');
 const M = require('./lib/match');
@@ -99,6 +99,33 @@ app.get('/api/stream', (req, res) => {
   clients.add(client);
   req.on('close', () => clients.delete(client));
 });
+
+// Heartbeat: proxies and load balancers drop idle streams, and a quiet
+// exchange can look dead to the browser's EventSource.
+function startHeartbeat(ms = 15000) {
+  const t = setInterval(() => {
+    for (const c of clients) {
+      try {
+        c.res.write(': hb\n\n');
+      } catch {
+        clients.delete(c);
+      }
+    }
+  }, ms);
+  if (t.unref) t.unref();
+  return t;
+}
+
+function closeStreams() {
+  for (const c of clients) {
+    try {
+      c.res.end();
+    } catch {
+      /* already gone */
+    }
+  }
+  clients.clear();
+}
 
 // userId === null → broadcast to everyone; otherwise private to that user.
 function broadcast(event, data, userId = null) {
@@ -205,6 +232,21 @@ app.get('/api/markets/:id/book', (req, res) => {
   const m = db.prepare('SELECT * FROM markets WHERE id = ?').get(Number(req.params.id));
   if (!m) return res.status(404).json({ error: 'Market not found' });
   res.json({ market: m, book: M.bookFor(db, m.id, 5) });
+});
+
+// Price formats for the trading desk: the same pure functions the engine uses,
+// so the UI never has to re-implement (or drift from) the conversion maths.
+app.get('/api/format/:price', (req, res) => {
+  const raw = Number(req.params.price);
+  if (!Number.isFinite(raw)) return res.status(400).json({ error: 'Price must be a number' });
+  const p = ODDS.snapToTick(raw);
+  if (!ODDS.validTick(p)) return res.status(400).json({ error: 'Price is outside the 1.01-1000 ladder' });
+  res.json({
+    decimal: p,
+    american: ODDS.toAmerican(p),
+    fractional: ODDS.toFractional(p),
+    implied_prob: ODDS.impliedProb(p),
+  });
 });
 
 // ── Trading ────────────────────────────────────────────────────────────────
@@ -403,6 +445,9 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
        ORDER BY m.id DESC LIMIT 200`
     )
     .all();
+  // Per-market overround is computed in JS (it needs the live book), so the
+  // desk can see at a glance whether a market is margined or arbitrageable.
+  for (const m of markets) m.overround = M.marketOverround(db, m.id);
   res.json({ markets });
 });
 
@@ -424,14 +469,24 @@ app.use('/api', (req, res) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// A 4xx is a decision this app made and its message is safe to return. A 5xx
+// may carry a database message, a file path or a stack frame, so the client
+// gets a generic message and the real one goes to the log. Exported so the
+// behaviour is unit-testable (no API path can provoke a 5xx on purpose).
 // eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  const status = err.status || 500;
+function errorHandler(err, req, res, next) {
+  const raw = Number(err.status) || 500;
+  const status = raw >= 500 ? 500 : raw;
   if (status >= 500) console.error('[api]', err);
-  res.status(status).json({ error: err.message || 'Internal error' });
-});
+  res.status(status).json({ error: status >= 500 ? 'Internal error' : err.message || 'Request failed' });
+}
+
+app.use(errorHandler);
 
 function main() {
+  const rolled = rollForwardEvents(db);
+  if (rolled) console.log(`[board] ${rolled} past-due event(s) moved to live`);
+  startHeartbeat();
   if (config.BOT_ENABLED) {
     try {
       bots.quoteAllMarkets(db);
@@ -444,11 +499,13 @@ function main() {
     drift.startDrift(db, { intervalMs: config.DRIFT_INTERVAL_MS, broadcast });
     console.log('[drift] on');
   }
-  app.listen(config.PORT, config.HOST, () => {
+  const server = app.listen(config.PORT, config.HOST, () => {
     console.log(`OpenBookmaker exchange on http://${config.HOST}:${config.PORT} (paper money only)`);
   });
+  // A hung SSE connection must not keep the process alive on shutdown.
+  server.on('close', closeStreams);
 }
 
 if (require.main === module) main();
 
-module.exports = { app, db, broadcast };
+module.exports = { app, db, broadcast, errorHandler };

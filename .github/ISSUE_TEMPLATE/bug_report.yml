@@ -1,0 +1,50 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: dropdown
+    id: money-impact
+    attributes:
+      label: Does this affect money or balances?
+      options:
+        - "No"
+        - "Yes - balances, escrow, settlement, commission or cash-out look wrong"
+      description: >
+        Money bugs are treated as critical and triaged first.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: The smallest set of steps or an API call sequence that reproduces it.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server output
+      description: Anything the server printed, including [api] error lines.
+  - type: dropdown
+    id: env
+    attributes:
+      label: Environment
+      options:
+        - npm start (local)
+        - npm test
+        - npm run test:smoke
+        - npm run test:ui
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit
+      description: 'git rev-parse --short HEAD'

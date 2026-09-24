@@ -345,3 +345,5 @@ form.inline input, form.inline select {
   main { flex-direction: column; }
   #slip { width: 100%; position: static; }
 }
+
+.fnote { font-size: 11px; min-height: 15px; }

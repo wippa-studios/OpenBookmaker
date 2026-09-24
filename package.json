@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --no-warnings server.js",
     "seed": "node --no-warnings lib/seed.js",
-    "test": "node tests/config.test.js && node tests/odds.test.js && node tests/auth.test.js && node tests/ledger.test.js && node tests/match.test.js && node tests/settle.test.js && node tests/cashout.test.js && node tests/api.test.js",
+    "test": "node tests/config.test.js && node tests/odds.test.js && node tests/store.test.js && node tests/seed.test.js && node tests/auth.test.js && node tests/ledger.test.js && node tests/tx.test.js && node tests/match.test.js && node tests/settle.test.js && node tests/cashout.test.js && node tests/api.test.js",
     "test:smoke": "./tests/smoke.sh",
     "test:ui": "node tests/ui_test.mjs"
   },
@@ -26,5 +26,15 @@
   },
   "devDependencies": {
     "playwright": "^1.62.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wippa-studios/OpenBookmaker.git"
+  },
+  "homepage": "https://github.com/wippa-studios/OpenBookmaker#readme",
+  "bugs": {
+    "url": "https://github.com/wippa-studios/OpenBookmaker/issues"
+  },
+  "author": "wippa-studios",
+  "private": false
 }

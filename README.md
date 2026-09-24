@@ -1,206 +1,220 @@
 # OpenBookmaker
 
-**An open-source, Betfair-style betting exchange** — back/lay order books with a
-real matching engine, Betfair tick-ladder pricing, liability escrow, market
-settlement with commission, cash-out, and seeded liquidity bots so the exchange
-is always tradeable. Paper money only.
+**An open-source betting exchange** — the kind of venue where the house is a
+*fee*, not a book. Back and lay against other people, order books with real
+depth, a matching engine with price-time priority, and settlement that pays the
+pot.
 
-![OpenBookmaker exchange board](ui-test.png)
+Node 22 · Express · SQLite · zero-build frontend · **paper money only**.
 
-> ⚠️ **Paper money only.** Every balance is play money; there is no real-money
-> path anywhere in this codebase. Operating a real-money betting exchange
-> requires licensing and regulatory compliance (18+, responsible gambling,
-> AML/KYC). Nothing here is financial, legal or gambling advice.
+![The OpenBookmaker exchange board showing a Betfair-style ladder](ui-test.png)
 
----
+> **Paper money only.** Every balance is play money and there is no real-money
+> execution path, no payments and no withdrawals anywhere in this codebase.
+> Running a real-money exchange requires licensing and regulatory compliance
+> (18+, responsible gambling, AML/KYC). This is a self-hosted demo and a teaching
+> project — see [`docs/EXCHANGE_RULES.md`](docs/EXCHANGE_RULES.md) for what it
+> does and does not do.
 
-## What it does
+## What makes it an exchange
 
-- **A real order book per runner** — resting lay offers (what you can *back*
-  into) and resting back offers (what you can *lay* into), aggregated by price
-  level with displayed size. No house book; the exchange is the peers.
-- **A matching engine** — best-for-taker sweeps, matches execute at the
-  **resting order's price**, partial fills, the remainder rests, FIFO within a
-  price level, and a user can never match their own order.
-- **Escrow wallet** — a backer freezes their stake, a layer freezes
-  `(price − 1) × stake`; available vs frozen balance with a full transaction
-  ledger (`deposit / escrow / release / settle / commission / refund`).
-- **Settlement with commission** — the admin settles a market with a winning
-  runner (or voids it); the pot is distributed, commission is charged on **net
-  winnings per user per market**, unmatched orders are auto-cancelled, and a
-  settled market is frozen so it can never pay twice.
-- **Cash-out** — close a single-runner position at top of book using the classic
-  green-up math (the hedge stake scales as `1 / current price`), all-or-nothing.
-- **Liquidity bots + drift** — a seeded `MarketMakers` bot quotes a three-tick
-  spread around each runner's fair price, and a drift loop walks those fair
-  prices so the board keeps moving. Both are configurable and can be turned off.
-- **An admin trading desk** — create the catalogue, watch liquidity and matched
-  volume, suspend/restore markets and settle them.
-- **Live UI** — SSE pushes book changes; price cells flash green/red on a move.
+A bookmaker sets the odds and takes the risk. An exchange does neither: **you
+bet against other bettors**, and the exchange's only income is a commission on
+winnings. That single difference changes the whole design, and this repo is
+built around it:
 
----
+- A **back** bet is "this runner wins" (risk: the stake). A **lay** bet is
+  "this runner loses" (risk: `(price − 1) × stake`). The UI puts both on either
+  side of every runner, exactly like the exchange you know.
+- Orders are **limit orders** matched against a real order book with price-time
+  priority, partial fills and a self-match guard. The displayed price is the
+  **resting** order's price, not yours.
+- Your risk is **escrowed** while a position is open — your balance shows
+  available versus frozen.
+- The **house edge is a commission on net winnings**, applied at settlement.
+- Where a bookmaker protects itself with a spread, an exchange shows you the
+  spread: here, the admin desk reports each market's **overround** (the
+  arbitrage/margin signal) from the live book.
 
-## Quick start
+## 60-second tour
 
 ```bash
 npm install
-cp .env.example .env      # optional — defaults work out of the box
-npm run seed              # demo sports, events, users and bot liquidity
-npm start                 # http://127.0.0.1:7777
+npm run seed      # demo catalogue, users and bot liquidity
+npm start         # http://127.0.0.1:7777
 ```
 
-Sign in with `demo` / `demo123` (customer) or `admin` / `admin123` (trading
-desk). The faucet on the Wallet page tops up play money.
+1. Open the board: sports across the top, competition-grouped event cards, and a
+   ladder per market — three back prices, the runner and its last traded price,
+   three lay prices. Blue flashes are price rises, red are falls.
+2. Sign in as `demo` / `demo123`, then **click a price**. The bet slip opens on
+   the right with that side and price; adjust the stake or step the price along
+   the ladder. Press **Place** — it matches against real liquidity or rests on
+   the book.
+3. **My Bets → Positions** shows what you are exposed to: per-runner backed and
+   laid stakes, your escrow, and the if-this-wins P&L for every runner. A losing
+   position on a winning runner can be **cashed out** at top of book.
+4. **Wallet** shows available versus frozen, a faucet for play money, and every
+   escrow, release, payout and commission as a ledger.
+5. Sign in as `admin` / `admin123` for the **trading desk**: create the
+   catalogue, read the live fair-price helper in American/fractional/implied
+   form, watch matched volume and overround, suspend a market, and **settle** it
+   with a winning runner (or void it) — which pays every matched pot net of
+   commission, right then.
 
-**The exchange binds to loopback only** — `HOST=0.0.0.0` is rejected at boot.
+## What works today
 
----
+| | Status |
+| --- | --- |
+| Back/lay order book, aggregated depth, LTP | working |
+| Matching engine: best-for-taker sweeps, match at resting price, partial fills, FIFO, self-match guard | working |
+| Escrow wallet: available vs frozen, full transaction ledger, faucet | working |
+| Settlement: pot distribution, void refunds, commission on net winnings, auto-cancel, double-settle protection | working |
+| Cash-out: green-up close at top of book, all-or-nothing | working (single runner, single side) |
+| Liquidity bots + fair-price drift | working (disable with `BOT_ENABLED=false`) |
+| Admin trading desk: catalogue, suspend/restore, settle, stats, overround | working |
+| Live updates | working (SSE with a 15s poll fallback) |
+| Accumulators / parlays | not implemented — see the rules doc |
+| Each-way betting | not implemented |
+| In-play bet delay, partial-fill queueing, results feed, real money | not implemented (out of scope) |
 
 ## Architecture
 
 ```
-   browser (public/ — zero build, classic scripts, one global per file)
-        │  REST + SSE (EventSource)                    ▲
-        ▼                                              │ book / balance
-  ┌──────────────────────────────────────────────────────────┐
-  │ server.js — Express                                    │
-  │   origin guard → sessions (httpOnly cookie) → routes    │
-  │   lib/auth      scrypt + opaque session tokens          │
-  │   lib/match     THE ENGINE: sweeps, fills, escrow      │
-  │   lib/ledger    escrow/release/settle + transactions   │
-  │   lib/settle    pot distribution, commission            │
-  │   lib/cashout   green-up close                          │
-  │   lib/odds      Betfair tick ladder, conversions        │
-  │   lib/bots      MarketMakers ladders                    │
-  │   lib/drift     fair-price random walk                  │
-  │   lib/store     SQLite schema (node:sqlite, WAL)       │
-  └──────────────────────────────────────────────────────────┘
-        │
-        ▼
-  data/openbookmaker.db   (gitignored, created on first run)
+browser (public/ — plain HTML/CSS/classic JS, no build step)
+     │  REST + SSE (EventSource), httpOnly cookie session
+     ▼
+┌───────────────────────────────────────────────────────────────────┐
+│ server.js  origin guard → sessions → routes → JSON 404 → static │
+│  lib/tx        transaction depth; nested calls use savepoints     │
+│  lib/match     the engine: sweeps, fills, escrow, book, positions  │
+│  lib/ledger    the only writer of balances and the transactions log │
+│  lib/settle    pot distribution, commission, void, auto-cancel     │
+│  lib/cashout   green-up close                                      │
+│  lib/odds      tick ladder, American/fractional, implied, overround │
+│  lib/auth      scrypt + opaque session tokens                      │
+│  lib/bots      MarketMakers ladders        lib/drift  fair drift │
+│  lib/store     schema (SQLite WAL)         lib/seed   fixtures    │
+└───────────────────────────────────────────────────────────────────┘
+     ▼
+  data/openbookmaker.db   (created on first run, gitignored)
 ```
 
-**Design rules that the money depends on**
+The dependencies run one way: `match → ledger → tx`, with `settle` and
+`cashout` on top of `match`. There is no ORM, no migration tool, and no runtime
+dependency beyond Express (Playwright is dev-only, for the browser suite) — the
+data model is one readable SQL file of 13 tables. Read
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the design and the reasoning.
 
-| Rule | Where |
-| --- | --- |
-| All money is integer **cents**; one `Math.round` per liability/payout/fee | `lib/match.js`, `lib/settle.js`, `lib/ledger.js` |
-| A back freezes its stake; a lay freezes `(own price − 1) × stake` | `lib/match.js` |
-| A lay matched at `P ≤ own price Q` releases `(Q − P) × fill` | `lib/match.js` |
-| Back taker sweeps resting lays `Q ≥ P` **highest first**; lay taker sweeps rests `P ≤ Q` **lowest first**; match at the **resting** price | `lib/match.js` |
-| Pot per match = `s + (Q−1)·s`; void refunds each side its own contribution | `lib/settle.js` |
-| Commission only on net winnings, per user per market | `lib/settle.js` |
-| Every service op is one transaction; ledger ops use `SAVEPOINT`s so they nest | `lib/ledger.js` |
-| Cash-out hedge `= round(Σ sᵢ·eᵢ / n)` — divides by the **current** price | `lib/cashout.js` |
+## The rules that protect the money
 
----
+If you read one thing before changing the engine, read this table. Every row is
+asserted by a test.
 
-## Betting rules
+| Rule | Why it exists | Tests |
+| --- | --- | --- |
+| Money is integer **cents**; one `Math.round` per liability, payout and fee | no drift, no two-round disagreements | `ledger`, `settle`, `store` |
+| A back freezes its stake; a lay freezes `(price−1) × stake` at its own price | a layer's risk must be reserved before matching | `match` (E1) |
+| A lay matched at `P ≤ own Q` releases `(Q−P) × fill` | the escrow must end up equal to what the match owes | `match` (E3, E5) |
+| A back taker sweeps resting lays `Q ≥ P` highest-first; a lay taker sweeps rests `P ≤ Q` lowest-first | the taker gets the best available price | `match` (E4, E5) |
+| Fills execute at the **resting** order's price | the resting orderer's price is the market's price | `match` (E1) |
+| FIFO within a price level (`id` tiebreak) | price-time priority, not insertion luck | `match` (E13) |
+| A user never matches their own order | no self-lay; own liquidity isn't executable | `match` (E6) |
+| Pot per match is `s + (Q−1)·s`; the winner is credited the pot | settlement is zero-sum apart from commission | `settle` (S1–S3) |
+| Void refunds each side its **own** contribution | nobody wins or loses on a void | `settle` (S4, S10) |
+| Commission on **net winnings per user per market**, only if positive | mirrors the real-world model; never a fee on a loser | `settle` (S7) |
+| A settled market is frozen and cannot settle twice | no double-pay | `settle` (S6), `api` |
+| Cash-out hedge `= round(Σ sᵢ·eᵢ / n)` — divides by the **current** price | the hedge stake scales as `1/n`; entry-price maths is wrong | `cashout` (C1–C2) |
+| Cash-out is all-or-nothing | never half-closed | `cashout` (C3) |
+| Every money operation is one transaction (`lib/tx.js`) | a failure leaves no partial state | `tx` (X1–X6) |
+| The database itself refuses invalid cents (`CHECK`) | the invariant does not rely on JavaScript | `store` (D3) |
 
-- Stake between `MIN_STAKE_CENTS` (100 = $1) and `MAX_STAKE_CENTS`; the
-  exchange escrows the stake (back) or the liability (lay) at placement.
-- Prices snap to the **Betfair tick ladder** (`1.01–2.00` step `0.01` …
-  `110–1000` step `10`); the server re-snaps everything it accepts.
-- An order is a **limit order**: it matches immediately against eligible
-  resting liquidity, and any unmatched remainder rests on the book until
-  cancelled or settled.
-- **Accumulators/parlays are not implemented** (v1 is one selection per order).
-- Cash-out covers a single-runner, single-side position; multi-runner or mixed
-  positions are traded manually.
-- Markets can be suspended (orders rejected) and are frozen once settled.
-
----
+Full specification, with worked examples: [`docs/EXCHANGE_RULES.md`](docs/EXCHANGE_RULES.md).
 
 ## API
 
-All endpoints are JSON and localhost-only. Errors are `{ "error": "..." }`.
-Mutating requests require a loopback `Origin` (or no `Origin` for local
-tooling). Authenticate with the `ob_session` httpOnly cookie or
-`Authorization: Bearer <token>`.
-
-### Public
+JSON in, JSON out; errors are `{ "error": "..." }`. Mutating requests require a
+loopback `Origin` (or none, for local tooling). Authenticate with the
+`ob_session` httpOnly cookie, or `Authorization: Bearer <token>` for scripts.
+Full reference including every parameter lives in
+[`docs/API.md`](docs/API.md).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/auth/register` | Create an account (auto sign-in) |
-| `POST` | `/api/auth/login` · `/api/auth/logout` | Session management |
-| `GET` | `/api/me` | Current user + available balance |
-| `GET` | `/api/sports` | Sports with open-event counts |
-| `GET` | `/api/events?sport=slug` | Board: events → markets → runners + ladders |
-| `GET` | `/api/markets/:id/book` | Full five-level ladder for a market |
-| `POST` | `/api/orders` | Place an order `{selection_id, side, price, stake_cents}` |
-| `GET` | `/api/orders` | Your unmatched (open) orders |
-| `POST` | `/api/orders/:id/cancel` | Cancel the unmatched remainder |
-| `GET` | `/api/positions` | Matched exposure, if-win P&L matrix, cash-out quote |
-| `POST` | `/api/markets/:id/cashout` | Green-up close |
-| `GET` | `/api/wallet` | Balance, escrow and the transaction ledger |
-| `POST` | `/api/wallet/deposit` | Faucet top-up (capped by `FAUCET_MAX_CENTS`) |
-| `GET` | `/api/settlements` | Settled history with P&L and commission |
+| `POST` | `/api/auth/register` · `/api/auth/login` · `/api/auth/logout` | account + session |
+| `GET` | `/api/me` | you, your balance and escrow |
+| `GET` | `/api/sports` · `/api/events` · `/api/markets/:id/book` | the board and the book |
+| `POST` | `/api/orders` · `GET /api/orders` · `POST /api/orders/:id/cancel` | trade |
+| `GET` | `/api/positions` | exposure, if-win P&L, cash-out quote |
+| `POST` | `/api/markets/:id/cashout` | close a position |
+| `GET` | `/api/wallet` · `POST /api/wallet/deposit` | balances + ledger |
+| `GET` | `/api/settlements` | settled history |
+| `GET` | `/api/format/:price` | decimal / American / fractional / implied |
 | `GET` | `/api/stream` | SSE: `book`, `balance`, `orders`, `settlement` |
-
-### Admin (role-gated)
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/admin/sports` | Create a sport |
-| `POST` | `/api/admin/competitions` | Create a competition |
-| `GET` | `/api/admin/competitions?sport_id=` | Competitions for a sport |
-| `POST` | `/api/admin/events` | Create an event |
-| `POST` | `/api/admin/markets` | Create a market |
-| `POST` | `/api/admin/selections` | Create a runner (with a fair price → bots quote it) |
-| `PATCH` | `/api/admin/markets/:id` | Suspend / restore |
-| `POST` | `/api/admin/markets/:id/settle` | Settle: `{winner_selection_id}` or `{void: true}` |
-| `GET` | `/api/admin/stats` | Matched volume and open orders per market |
-
----
+| `POST` | `/api/admin/{sports,competitions,events,markets,selections}` | build the catalogue |
+| `GET` | `/api/admin/competitions?sport_id=` | competitions for a sport |
+| `PATCH` | `/api/admin/markets/:id` | suspend / restore |
+| `POST` | `/api/admin/markets/:id/settle` | settle: winner or `void: true` |
+| `GET` | `/api/admin/stats` | matched volume, open orders, overround |
 
 ## Configuration
 
-`.env` (see `.env.example`); every value is validated at boot and a bad value
-**aborts the launch** rather than failing later.
+`.env` (see [`.env.example`](.env.example)). Every value is validated at boot;
+a bad value **aborts the launch** rather than failing later.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PORT` / `HOST` | `7777` / `127.0.0.1` | Listener (loopback only) |
+| `PORT` / `HOST` | `7777` / `127.0.0.1` | listener; `HOST` is loopback-only by design |
 | `DB_PATH` | `data/openbookmaker.db` | SQLite file (`:memory:` for tests) |
-| `COMMISSION_RATE` | `0.025` | Fee on net winnings per user per market |
-| `FAUCET_MAX_CENTS` | `100000` | Faucet cap per deposit |
-| `MIN_STAKE_CENTS` / `MAX_STAKE_CENTS` | `100` / `100000` | Order size limits |
-| `BOT_ENABLED` | `true` | Quote liquidity with the MarketMakers bot |
-| `DRIFT_ENABLED` / `DRIFT_INTERVAL_MS` | `true` / `5000` | Fair-price random walk |
-| `SESSION_TTL_DAYS` | `30` | Session lifetime |
+| `COMMISSION_RATE` | `0.025` | fee on net winnings |
+| `FAUCET_MAX_CENTS` | `100000` | faucet cap per deposit |
+| `MIN_STAKE_CENTS` / `MAX_STAKE_CENTS` | `100` / `100000` | order size bounds |
+| `BOT_ENABLED` / `DRIFT_ENABLED` | `true` | demo liquidity and price drift |
+| `DRIFT_INTERVAL_MS` | `5000` | drift cadence |
+| `SESSION_TTL_DAYS` | `30` | session lifetime |
 
----
-
-## Testing
+## Development
 
 ```bash
-npm test          # 78 offline unit + API-integration checks (8 suites)
-npm run test:smoke  # 31 live end-to-end checks against a real server
-npm run test:ui    # 22 real-browser checks (Playwright/Chromium)
+npm test            # 96 checks, 11 suites — unit + API integration, fully offline
+npm run test:smoke  # 33 checks — live end-to-end against a real server
+npm run test:ui     # 22 checks — real Chromium via Playwright
 ```
 
-Everything runs offline: temporary or in-memory databases, an ephemeral port,
-and drift disabled. The suite covers the tick ladder, the matching sweeps and
-FIFO, escrow release on a lay that matches better than its own price,
-pot/void/commission settlement, conservation of money, cash-out green-up and
-rollback, the HTTP surface, the origin/session guards, and the UI in a real
-browser (including the ladder's geometry).
+The suite is dependency-free: plain `assert`, numbered examples, no framework,
+no mocks. Tests use in-memory or temporary databases, an ephemeral port, and the
+drift loop disabled, so `npm test` needs no credentials and no network. The
+browser suite asserts the ladder's *geometry*, not just that cells exist — a
+mis-stacked price column looks fine in a screenshot and fails an x/y assertion.
 
----
+Contributing, house conventions and where to add things:
+[`CONTRIBUTING.md`](CONTRIBUTING.md). Security: [`.github/SECURITY.md`](.github/SECURITY.md).
+
+## Project layout
+
+```
+lib/       engine and domain      server.js   HTTP + SSE wiring
+public/    frontend (no build)     tests/      11 unit/API suites + smoke + browser
+docs/      architecture, rules    data/       SQLite database (gitignored)
+```
 
 ## Known limitations
 
-- **Paper money only**, no real-money execution path, no payments, no KYC/AML.
-- Accumulators (parlays) and each-way betting are not implemented.
-- Cash-out is limited to single-runner, single-side positions.
-- No in-play bet delay, no partial-fill queueing, no cross-market matching.
-- Settlement is manual: an admin must settle each market (there is no results
-  feed). Marked results are the only source of truth.
-- The demo bot's fair prices are a random walk, not a model.
-- Seeded credentials are committed on purpose for the demo; never deploy this
-  as-is.
+Paper money only; no payments, KYC/AML or licensing path. Accumulators,
+each-way betting, in-play bet delay, partial-fill queueing and a results feed
+are out of scope. Settlement is a manual admin action, and the demo bot's fair
+prices are a random walk, not a model. The seeded credentials are committed on
+purpose for the demo — never deploy this as-is. Full list and rationale in
+[`docs/EXCHANGE_RULES.md`](docs/EXCHANGE_RULES.md#what-is-deliberately-not-implemented).
 
-## License
+## Roadmap
 
-MIT — see [LICENSE](LICENSE).
+- Accumulators (parlays) and each-way markets
+- In-play: bet delay modelling and a traded-volume ladder
+- A cash-out that greens multi-runner positions
+- A pluggable results feed that calls the same settlement entry point
+- Odds-history charts and a market-mover view on the board
+
+## Licence
+
+MIT — see [`LICENSE`](LICENSE). © wippa-studios.

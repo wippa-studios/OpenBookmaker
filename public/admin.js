@@ -8,7 +8,7 @@
     console.error('[admin] window.OB missing — app.js must load first');
     return;
   }
-  const { api, toast, fmt, price2, esc, whenText, state, refreshMe, refreshAll } = OB;
+  const { api, toast, fmt, price2, esc, whenText, state, refreshAll } = OB;
 
   let cache = { sports: [], events: [], stats: { markets: [] } };
 
@@ -49,7 +49,7 @@
         return;
       }
       body.innerHTML =
-        '<table><thead><tr><th>Market</th><th>Event</th><th>Status</th><th>Matched</th><th>Open orders</th><th>Actions</th></tr></thead><tbody>' +
+        '<table><thead><tr><th>Market</th><th>Event</th><th>Status</th><th>Matched</th><th>Open orders</th><th>Overround</th><th>Actions</th></tr></thead><tbody>' +
         markets
           .map(
             (m) => `<tr>
@@ -58,6 +58,7 @@
           <td><span class="chip ${esc(m.status)}">${esc(m.status)}</span></td>
           <td class="tn">${fmt(m.total_matched_cents)}</td>
           <td class="tn">${m.open_orders}</td>
+          <td class="tn">${overroundCell(m.overround)}</td>
           <td>${
             m.status === 'settled'
               ? '<span class="muted">settled</span>'
@@ -91,6 +92,16 @@
     } catch (e) {
       body.innerHTML = `<div class="empty">${esc(e.message)}</div>`;
     }
+  }
+
+  // Overround is the desk's margin/arb signal: positive = margined,
+  // negative = the runners can all be backed for a guaranteed profit.
+  function overroundCell(v) {
+    if (v === null || v === undefined) return '<span class="muted" title="a runner has no available price">–</span>';
+    const pct = (v * 100).toFixed(2) + '%';
+    if (v < -0.001) return `<span class="win" title="arbitrage available">${pct}</span>`;
+    if (v > 0.001) return `<span class="muted" title="margined">${pct}</span>`;
+    return '<span class="muted" title="fair">0.00%</span>';
   }
 
   async function settleDialog(marketId) {
@@ -201,11 +212,35 @@
             <h3>Selection</h3>
             <label>Market</label><select name="market_id">${marketOpts}</select>
             <label>Name</label><input name="name" placeholder="Arsenal" />
-            <label>Fair price</label><input name="fair_price" type="number" step="0.01" min="1.01" max="1000" placeholder="2.40" />
+            <label>Fair price</label><input name="fair_price" type="number" step="0.01" min="1.01" max="1000" placeholder="2.40" data-fair />
+            <div class="muted fnote" data-fairnote>American / fractional / implied from the server</div>
             <button class="btn primary" type="submit">Create</button>
           </form>
         </div>
         <p class="muted">Creating a selection with a fair price makes the bot quote ladders around it (when bots are enabled).</p>`;
+
+      // Fair-price helper: the conversions come from lib/odds.js via the API,
+      // so the desk never shows a number the engine would not agree with.
+      const fair = body.querySelector('[data-fair]');
+      const note = body.querySelector('[data-fairnote]');
+      let noteSeq = 0;
+      fair.onchange = async () => {
+        const raw = fair.value.trim();
+        if (raw === '') {
+          note.textContent = 'American / fractional / implied from the server';
+          return;
+        }
+        const seq = ++noteSeq;
+        try {
+          const r = await api('GET', `/api/format/${encodeURIComponent(raw)}`);
+          if (seq !== noteSeq) return; // a newer keystroke already answered
+          note.innerHTML =
+            `<strong>${esc(r.american)}</strong> · ${esc(r.fractional)} · implied ${(r.implied_prob * 100).toFixed(1)}%` +
+            (Math.abs(r.decimal - Number(raw)) > 1e-9 ? ` <span class="muted">(snaps to ${price2(r.decimal)})</span>` : '');
+        } catch (e) {
+          if (seq === noteSeq) note.textContent = e.message;
+        }
+      };
 
       // competition dropdown follows the chosen sport
       const evtForm = body.querySelector('form[data-f="event"]');

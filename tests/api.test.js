@@ -199,6 +199,59 @@ const check = async (name, fn) => {
       assert.strictEqual(res.status, 403); // guard runs before the body parser
     });
 
+
+    // ── price formats (the pricing library, exposed for the desk) ──────
+    await check('GET /api/format returns every format from lib/odds', async () => {
+      const r = await j('GET', '/api/format/2.5');
+      assert.strictEqual(r.status, 200);
+      assert.strictEqual(r.json.decimal, 2.5);
+      assert.strictEqual(r.json.american, '+150');
+      assert.strictEqual(r.json.fractional, '3/2');
+      assert.ok(Math.abs(r.json.implied_prob - 0.4) < 1e-12);
+      const short = await j('GET', '/api/format/1.4');
+      assert.strictEqual(short.json.american, '-250');
+      assert.strictEqual(short.json.fractional, '2/5');
+    });
+
+    await check('GET /api/format snaps to the ladder and rejects junk', async () => {
+      const snap = await j('GET', '/api/format/2.75'); // 2.75 is not a tick
+      assert.strictEqual(snap.status, 200);
+      assert.ok([2.74, 2.76].includes(snap.json.decimal), `snapped to ${snap.json.decimal}`);
+      assert.strictEqual((await j('GET', '/api/format/abc')).status, 400);
+      assert.strictEqual((await j('GET', '/api/format/0.5')).status, 200); // clamps to 1.01
+    });
+
+    // ── admin stats carry the per-market overround ──────────────────────
+    await check('admin stats include a per-market overround', async () => {
+      const adminLogin = await j('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin123' } });
+      const r = await j('GET', '/api/admin/stats', { cookie: cookieOf(adminLogin) });
+      assert.strictEqual(r.status, 200);
+      assert.ok(r.json.markets.length >= 1);
+      for (const m of r.json.markets) {
+        assert.ok(m.overround === null || typeof m.overround === 'number', 'overround is a number or null');
+      }
+    });
+
+    // ── a 5xx must never leak internals to the client ───────────────────
+    await check('error handler hides 5xx detail but keeps 4xx messages', () => {
+      const sent = {};
+      const res = {
+        status(code) { sent.code = code; return this; },
+        json(body) { sent.body = body; },
+      };
+      srv.errorHandler(
+        Object.assign(new Error('UNIQUE constraint failed: users.username at /srv/data/db'), { status: 500 }),
+        {}, res, () => {}
+      );
+      assert.strictEqual(sent.code, 500);
+      assert.deepStrictEqual(sent.body, { error: 'Internal error' });
+      assert.ok(!JSON.stringify(sent.body).includes('UNIQUE'));
+
+      srv.errorHandler(Object.assign(new Error('Insufficient available balance'), { status: 400 }), {}, res, () => {});
+      assert.strictEqual(sent.code, 400);
+      assert.deepStrictEqual(sent.body, { error: 'Insufficient available balance' });
+    });
+
     // ── SSE stream ──────────────────────────────────────────────────────
     await check('SSE stream responds with event-stream', async () => {
       const res = await fetch(`${base}/api/stream`);
