@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenBookmaker — paper-money betting exchange</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">OPEN<span>BOOKMAKER</span></div>
+    <nav id="nav">
+      <button data-page="markets">Exchange</button>
+      <button data-page="bets">My Bets</button>
+      <button data-page="wallet">Wallet</button>
+      <button data-page="admin" id="navAdmin" hidden>Admin</button>
+    </nav>
+    <div class="balance" id="balance" hidden></div>
+    <div class="who" id="who"></div>
+    <button class="btn sm" id="authBtn">Sign in</button>
+  </header>
+
+  <main>
+    <div id="page"></div>
+    <div id="slip" hidden>
+      <h3>Bet Slip</h3>
+      <div id="slipBody"></div>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+  <div id="authModal">
+    <div class="box">
+      <h3 id="authTitle">Sign in</h3>
+      <input id="authUser" placeholder="username" autocomplete="username" />
+      <input id="authPass" type="password" placeholder="password" autocomplete="current-password" />
+      <div class="row">
+        <button class="btn primary" id="authGo" style="flex:1">Sign in</button>
+        <button class="btn" id="authSwitch">Register</button>
+      </div>
+      <p class="muted" style="font-size:12px; margin-bottom:0">
+        Paper money only. Demo: <code>demo/demo123</code> · admin: <code>admin/admin123</code>
+      </p>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

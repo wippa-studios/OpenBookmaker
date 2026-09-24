@@ -1,0 +1,347 @@
+/* OpenBookmaker — dark house palette, Betfair-style ladder board. */
+:root {
+  --bg: #070707;
+  --bg2: #0c0c0c;
+  --card: #111;
+  --card2: #161616;
+  --line: #252525;
+  --line2: #333;
+  --text: #e8e8e8;
+  --muted: #9a9a9a;
+  --green: #4ade80;
+  --green-bg: rgba(74, 222, 128, 0.12);
+  --red: #f87171;
+  --red-bg: rgba(248, 113, 113, 0.12);
+  --amber: #fde68a;
+  --blue: #93c5fd;
+  --blue-bg: rgba(147, 197, 253, 0.12);
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 6px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3a3a; }
+
+/* ── header ─────────────────────────────────────────────────────────── */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--line);
+}
+header .logo {
+  font-weight: 800;
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  color: var(--amber);
+  white-space: nowrap;
+}
+header .logo span { color: var(--text); }
+header nav { display: flex; gap: 4px; flex: 1; }
+header nav button {
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+}
+header nav button:hover { color: var(--text); background: var(--card2); }
+header nav button.active { color: var(--amber); background: var(--card); }
+header .balance {
+  font-variant-numeric: tabular-nums;
+  color: var(--amber);
+  font-weight: 700;
+  white-space: nowrap;
+}
+header .balance small { color: var(--muted); font-weight: 400; }
+header .balance.frozen small { color: var(--red); }
+header .who { color: var(--muted); white-space: nowrap; }
+
+/* ── layout ─────────────────────────────────────────────────────────── */
+main { display: flex; gap: 14px; padding: 14px 18px 40px; align-items: flex-start; }
+#page { flex: 1; min-width: 0; }
+
+/* ── cards / tables ─────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.card h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.row { display: flex; align-items: center; gap: 10px; }
+.spacer { flex: 1; }
+.muted { color: var(--muted); }
+.tn { font-variant-numeric: tabular-nums; }
+a { color: var(--blue); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+tr:last-child td { border-bottom: 0; }
+
+/* ── buttons ────────────────────────────────────────────────────────── */
+button { font: inherit; cursor: pointer; }
+.btn {
+  background: var(--card2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  padding: 7px 14px;
+  border-radius: 8px;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 700; }
+.btn.primary:hover { filter: brightness(1.06); }
+.btn.green { background: var(--green-bg); border-color: var(--green); color: var(--green); }
+.btn.red { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.sm { padding: 4px 10px; font-size: 12px; }
+
+/* ── market ladder (Betfair style) ──────────────────────────────────── */
+/* .ladder is a stack of rows; each .lrow is one selection laid out as
+   [3 back cells | runner | 3 lay cells]. A single 3-column grid on .ladder
+   would wrap each selection across three rows — the row wrapper is what
+   keeps the runner centred. */
+.ladder { display: block; }
+.lrow {
+  display: grid;
+  grid-template-columns: 1fr 92px 1fr;
+  gap: 2px 8px;
+  align-items: stretch;
+  padding: 2px 0;
+}
+.lrow.lhdr { padding-bottom: 4px; }
+.lstack { display: flex; flex-direction: column; gap: 2px; }
+.lcell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 0.4s ease;
+}
+.lcell { width: 100%; }
+.lcell .p { font-weight: 700; font-variant-numeric: tabular-nums; }
+.lcell .s { font-size: 11px; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.lcell.back { background: var(--blue-bg); color: var(--blue); }
+.lcell.lay { background: var(--red-bg); color: var(--red); }
+.lcell[data-bet]:hover { border-color: currentColor; }
+.lcell.empty { background: transparent; cursor: default; color: var(--line2); }
+.lcell.flash-up { background: var(--green-bg); color: var(--green); }
+.lcell.flash-down { background: var(--red-bg); color: var(--red); }
+.lmid { text-align: center; display: flex; flex-direction: column; justify-content: center; }
+.lmid .ltp { font-variant-numeric: tabular-nums; font-weight: 700; }
+.lmid .nm { font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hdr { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); text-align: center; padding: 2px; }
+.hdr.b { color: var(--blue); }
+.hdr.l { color: var(--red); }
+
+.event { padding: 8px 0 12px; border-bottom: 1px solid var(--line); }
+.event:last-child { border-bottom: 0; }
+.mkt { margin-top: 10px; }
+.mkthead { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.sportbar { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 18px 0; }
+.sportbar .chip { cursor: pointer; }
+.sportbar .chip.on { color: var(--amber); border-color: var(--amber); }
+
+.tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.poscard { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 10px; background: var(--card2); }
+.poshead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.pnlrow { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.pnlchip { border: 1px solid var(--line2); border-radius: 999px; padding: 2px 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.wgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.wgrid .muted { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.wbig { font-size: 20px; font-weight: 700; }
+.side { font-weight: 700; }
+.side.back { color: var(--blue); }
+.side.lay { color: var(--red); }
+
+.evmeta { display: flex; gap: 10px; align-items: baseline; margin-bottom: 10px; flex-wrap: wrap; }
+.evmeta .nm { font-size: 15px; font-weight: 700; }
+.evmeta .comp { color: var(--muted); font-size: 12px; }
+.evmeta .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--line2);
+  color: var(--muted);
+}
+/* Chips are <button>s in the sport filter — without this they render with the
+   browser's default light button face and the label disappears. */
+button.chip { background: var(--card2); font-family: inherit; cursor: pointer; }
+button.chip:hover { border-color: var(--muted); color: var(--text); }
+.chip.open { color: var(--green); border-color: var(--green); }
+.chip.suspended { color: var(--amber); border-color: var(--amber); }
+.chip.settled { color: var(--muted); }
+.chip.live { color: var(--red); border-color: var(--red); }
+
+/* ── bet slip ───────────────────────────────────────────────────────── */
+#slip {
+  width: 330px;
+  position: sticky;
+  top: 70px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+#slip h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.sliprow { border-top: 1px solid var(--line); padding: 10px 0; }
+.sliprow:first-child { border-top: 0; }
+.sliphead { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.sliphead .muted { font-size: 11px; }
+#slip .rm { color: var(--red); cursor: pointer; background: none; border: 0; font-size: 17px; line-height: 1; padding: 0 4px; }
+.slipgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+#slip label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+#slip input {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+#slip .prev { font-variant-numeric: tabular-nums; margin: 8px 0; color: var(--muted); font-size: 12px; }
+#slip .stepper { display: flex; gap: 4px; align-items: center; }
+#slip .stepper input { text-align: center; }
+#slip .stepper button { width: 28px; padding: 4px 0; flex: none; }
+#slip .place { width: 100%; }
+
+/* ── forms ──────────────────────────────────────────────────────────── */
+form.inline { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+form.inline label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 3px; }
+form.inline input, form.inline select {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+}
+
+/* ── toast ──────────────────────────────────────────────────────────── */
+#toast {
+  position: fixed;
+  top: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: var(--card2);
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  padding: 8px 16px;
+  display: none;
+  max-width: 80vw;
+}
+#toast.show { display: block; }
+#toast.ok { border-color: var(--green); color: var(--green); }
+#toast.err { border-color: var(--red); color: var(--red); }
+
+/* ── auth modal ─────────────────────────────────────────────────────── */
+#authModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+#authModal.show { display: flex; }
+#authModal .box {
+  width: 340px;
+  background: var(--card);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+#authModal h3 { margin: 0 0 12px; }
+#authModal input {
+  width: 100%;
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  padding: 8px;
+  border-radius: 6px;
+  font: inherit;
+  margin-bottom: 10px;
+}
+
+.empty { color: var(--muted); padding: 14px 0; text-align: center; }
+.win { color: var(--green); }
+.loss { color: var(--red); }
+
+/* ── admin desk + modal ─────────────────────────────────────────────── */
+.creategrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; }
+.creategrid .card { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.creategrid label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.creategrid input, .creategrid select {
+  background: var(--bg2);
+  border: 1px solid var(--line2);
+  color: var(--text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font: inherit;
+  width: 100%;
+}
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.modal .box {
+  width: 360px;
+  max-width: 92vw;
+  background: var(--card);
+  border: 1px solid var(--line2);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.modal h3 { margin: 0 0 10px; }
+.optrow { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.optrow .muted { margin-left: auto; font-size: 11px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ladder .cell { transition: none; }
+  * { transition: none !important; }
+}
+
+@media (max-width: 900px) {
+  main { flex-direction: column; }
+  #slip { width: 100%; position: static; }
+}

@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node --no-warnings server.js",
     "seed": "node --no-warnings lib/seed.js",
-    "test": "node tests/odds.test.js && node tests/auth.test.js && node tests/ledger.test.js && node tests/match.test.js && node tests/settle.test.js && node tests/cashout.test.js && node tests/api.test.js",
+    "test": "node tests/config.test.js && node tests/odds.test.js && node tests/auth.test.js && node tests/ledger.test.js && node tests/match.test.js && node tests/settle.test.js && node tests/cashout.test.js && node tests/api.test.js",
+    "test:smoke": "./tests/smoke.sh",
     "test:ui": "node tests/ui_test.mjs"
   },
   "engines": {
@@ -22,5 +23,8 @@
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.0"
   }
 }
