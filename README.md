@@ -7,7 +7,7 @@ pot.
 
 Node 22 · Express · SQLite · zero-build frontend · **paper money only**.
 
-![The OpenBookmaker exchange board showing a Betfair-style ladder](ui-test.png)
+![The OpenBookmaker exchange board showing a Betfair-style ladder](docs/screenshot.png)
 
 > **Paper money only.** Every balance is play money and there is no real-money
 > execution path, no payments and no withdrawals anywhere in this codebase.
@@ -178,14 +178,15 @@ a bad value **aborts the launch** rather than failing later.
 ```bash
 npm test            # 96 checks, 11 suites — unit + API integration, fully offline
 npm run test:smoke  # 33 checks — live end-to-end against a real server
-npm run test:ui     # 22 checks — real Chromium via Playwright
+npm run test:ui     # 24 checks — real Chromium via Playwright (board + admin desk)
 ```
 
 The suite is dependency-free: plain `assert`, numbered examples, no framework,
 no mocks. Tests use in-memory or temporary databases, an ephemeral port, and the
 drift loop disabled, so `npm test` needs no credentials and no network. The
 browser suite asserts the ladder's *geometry*, not just that cells exist — a
-mis-stacked price column looks fine in a screenshot and fails an x/y assertion.
+mis-stacked price column looks fine in a screenshot and fails an x/y assertion —
+and drives the admin desk end to end.
 
 Contributing, house conventions and where to add things:
 [`CONTRIBUTING.md`](CONTRIBUTING.md). Security: [`.github/SECURITY.md`](.github/SECURITY.md).

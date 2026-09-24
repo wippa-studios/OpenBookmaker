@@ -6,3 +6,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+
+# browser-test output (the committed board image is docs/screenshot.png)
+ui-test.png

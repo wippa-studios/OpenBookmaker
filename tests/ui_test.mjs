@@ -15,7 +15,7 @@ const PORT = Number(process.env.UI_TEST_PORT || 7898);
 const BASE = `http://127.0.0.1:${PORT}`;
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const TMP = mkdtempSync(path.join(tmpdir(), 'ob-ui-'));
-const SHOT = process.env.UI_SHOT || path.join(ROOT, 'ui-test.png');
+const SHOT = process.env.UI_SHOT || path.join(ROOT, 'ui-test.png'); // gitignored: test output, not a source asset
 
 let passed = 0;
 const check = (name, ok, extra = '') => {
@@ -179,10 +179,47 @@ try {
   check('admin tab hidden for a customer', await page.locator('#navAdmin').isHidden());
   await page.click('#nav button[data-page="markets"]');
   await page.waitForSelector('.ladder', { timeout: 5000 });
+  await page.waitForTimeout(400);
   await page.screenshot({ path: SHOT, fullPage: false });
   console.log('  info screenshot:', SHOT);
 
-  check('no uncaught page errors during the whole run', pageErrors.length === 0, pageErrors.join(' | '));
+  // ── admin desk: overround column + the server-backed fair-price helper ──
+  await check('admin desk renders the overround column', async () => {
+    await page.click('#authBtn'); // sign out of the customer session
+    await page.waitForFunction(() => document.getElementById('authBtn').textContent === 'Sign in', null, { timeout: 10000 });
+    await page.click('#authBtn');
+    await page.waitForSelector('#authModal.show', { timeout: 5000 });
+    await page.fill('#authUser', 'admin');
+    await page.fill('#authPass', 'admin123');
+    await page.click('#authGo');
+    await page.waitForSelector('#navAdmin:not([hidden])', { timeout: 10000 });
+    await page.click('#nav button[data-page="admin"]');
+    await page.waitForSelector('#adminBody table', { timeout: 10000 });
+    const heads = await page.locator('#adminBody th').allTextContents();
+    check('overround column present', heads.some((h) => /overround/i.test(h)), `(${heads.join(',')})`);
+    const orCells = await page.locator('#adminBody td:nth-child(6)').count();
+    check('overround cells rendered', orCells >= 1, `(${orCells} markets)`);
+    const suspend = page.locator('#adminBody [data-toggle]').first();
+    check('suspend/restore control present', (await suspend.count()) === 1);
+  });
+
+  await check('fair-price helper returns server-side conversions', async () => {
+    await page.click('[data-view="create"]');
+    await page.waitForSelector('[data-fair]', { timeout: 10000 });
+    await page.fill('[data-fair]', '2.5');
+    await page.dispatchEvent('[data-fair]', 'change');
+    // the conversions come from lib/odds.js via /api/format — the desk must not
+    // invent them client-side
+    await page.waitForFunction(
+      () => /\+\d+|-\d+/.test(document.querySelector('[data-fairnote]').textContent || ''),
+      null,
+      { timeout: 10000 }
+    );
+    const note = (await page.locator('[data-fairnote]').textContent()) || '';
+    check('american + fractional + implied shown', /\d+\/\d+/.test(note) && /implied/.test(note), `("${note.trim()}")`);
+  });
+
+  await check('no uncaught page errors during the whole run', pageErrors.length === 0, pageErrors.join(' | '));
 } finally {
   await browser.close();
 }

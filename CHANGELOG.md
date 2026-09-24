@@ -23,11 +23,13 @@ Nothing yet.
   fair-price helper showing American/fractional/implied from the server, and a
   per-market overround (margin or arbitrage) signal.
 - Verification: a live end-to-end smoke script (33 checks) and a real-browser
-  Playwright suite (22 checks, including ladder geometry and zero page errors).
+  Playwright suite (24 checks, including ladder geometry, the admin desk and
+  zero page errors).
 - `GET /api/format/:price` and `GET /api/settlements`; `GET /api/admin/competitions`.
 - Repository process: contributing guide, security policy, code of conduct,
   changelog, issue and PR templates, `.editorconfig`, `.nvmrc`.
-- `docs/ARCHITECTURE.md` and `docs/EXCHANGE_RULES.md`.
+- `docs/ARCHITECTURE.md`, `docs/EXCHANGE_RULES.md` and `docs/API.md`;
+  `docs/screenshot.png` as the board image.
 
 ### Security
 - `HOST` is validated as loopback-only; a routable bind now aborts the launch.
@@ -60,6 +62,9 @@ Nothing yet.
 - `registerUser` rejects fractional or negative opening balances.
 - Transaction handling centralised in `lib/tx.js` (nested calls use savepoints);
   `placeOrderTx` refuses to run outside a transaction.
+- `GET /api/format/:price` and per-market overround on the admin stats are now
+  backed by the existing, tested pricing library rather than sitting unused.
+- Past-due seeded events roll forward to `live` at boot.
 - Board hygiene: past-due fixtures roll forward to `live` at boot.
 
 ## [0.1.0] - 2026-09-24
